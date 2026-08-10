@@ -1,0 +1,46 @@
+# Ambiente virtual
+venv/
+.venv/
+env/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+
+# Credenciais e sessão (NUNCA commitar)
+.env
+.env.*
+credenciais.json
+*-session.json
+.mcp-spa-session.json
+
+# HTML/screenshots de diagnóstico (podem conter dados de processos reais)
+spa_*.html
+spa_*.png
+/tmp/spa_*
+
+# PDFs e documentos baixados durante debug
+*.pdf
+processo-*.pdf
+autos-*.pdf
+doc-*.pdf
+
+# Fixtures de teste com dados reais de processos — nunca commitar
+fixtures/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*.bak
+
+# Sistema operacional
+.DS_Store
+Thumbs.db
