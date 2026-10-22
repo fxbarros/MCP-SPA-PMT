@@ -595,6 +595,27 @@ def _cnj_digitos(numero: str) -> str:
     return digitos
 
 
+# Origem da comunicação no SPA (soap_setting_id), validada nas caixas:
+# 1 = TJPI 1º grau, 3 = TJPI (outra instância, mesmo CNJ), 11 = TRF1.
+# O CNJ traz o ramo (J) e o tribunal (TR), mas não o grau — por isso a
+# dedução só escolhe o padrão do tribunal; o valor exato vem de listar_caixa.
+_SOAP_POR_TRIBUNAL = {("8", "18"): 1, ("4", "01"): 11}
+
+
+def _soap_setting(cnj: str, soap_setting_id: int) -> int:
+    """soap_setting_id informado, ou o padrão do tribunal deduzido do CNJ."""
+    if soap_setting_id:
+        return soap_setting_id
+    return _SOAP_POR_TRIBUNAL.get((cnj[13], cnj[14:16]), 1)
+
+
+def _chave_juntada(doc: dict) -> datetime:
+    try:
+        return datetime.strptime(doc.get("juntado_em") or "", "%d/%m/%Y %H:%M")
+    except ValueError:
+        return datetime.min
+
+
 # rótulo de item da Pasta do Processo: "(99672168) - Despacho juntado em 29/06/2026 - 11:52"
 DOC_JUDICIAL_RE = re.compile(
     r"\((\d+)\)\s*-\s*(.*?)\s*juntado em\s*(\d{2}/\d{2}/\d{4})\s*-\s*(\d{2}:\d{2})"
@@ -602,16 +623,19 @@ DOC_JUDICIAL_RE = re.compile(
 
 
 @mcp.tool
-def listar_documentos_judiciais(numero_processo: str, soap_setting_id: int = 1) -> dict:
+def listar_documentos_judiciais(numero_processo: str, soap_setting_id: int = 0) -> dict:
     """Lista os documentos externos do processo judicial — a "Pasta do
     Processo" que o SPA baixa do PJe/TJPI por comunicação eletrônica
     (petição inicial, despachos, certidões, intimações etc.).
 
     Args:
         numero_processo: número CNJ, com ou sem pontuação.
-        soap_setting_id: origem da comunicação (1 = TJPI 1º grau, padrão).
+        soap_setting_id: origem da comunicação (1 = TJPI 1º grau, 3 = TJPI
+            outra instância, 11 = TRF1). 0 = deduzir do CNJ (TJPI → 1,
+            TRF1 → 11); listar_caixa devolve o valor exato de cada processo.
     """
     cnj = _cnj_digitos(numero_processo)
+    soap_setting_id = _soap_setting(cnj, soap_setting_id)
     with FetcherSession(follow_redirects=True) as sessao:
         r = _get_autenticado(
             sessao,
@@ -645,8 +669,10 @@ def listar_documentos_judiciais(numero_processo: str, soap_setting_id: int = 1) 
 
     return {
         "numero_processo": numero_processo,
+        "soap_setting_id": soap_setting_id,
         "total": len(documentos),
-        "documentos": list(documentos.values()),
+        # mais recente primeiro (sem data vão para o fim)
+        "documentos": sorted(documentos.values(), key=_chave_juntada, reverse=True),
         "dica": "use baixar_documento_judicial com o id para obter o PDF; "
         "sem id, baixa os autos completos",
     }
@@ -657,12 +683,14 @@ def baixar_documento_judicial(
     numero_processo: str,
     documento_id: str = "",
     pasta: str = "~/Downloads",
-    soap_setting_id: int = 1,
+    soap_setting_id: int = 0,
 ) -> dict:
     """Baixa um documento da Pasta do Processo judicial (PJe/TJPI) pelo id
     retornado por listar_documentos_judiciais — ou, sem `documento_id`,
-    baixa os autos completos num único PDF."""
+    baixa os autos completos num único PDF. soap_setting_id 0 = deduzir
+    do CNJ (ver listar_documentos_judiciais)."""
     cnj = _cnj_digitos(numero_processo)
+    soap_setting_id = _soap_setting(cnj, soap_setting_id)
     if documento_id:
         caminho = f"/judicial_processes/{cnj}/document/{documento_id}.pdf"
         nome = f"doc-{documento_id}-{cnj}.pdf"
@@ -716,7 +744,7 @@ def ler_documento_judicial(
     documento_id: str,
     pagina_inicial: int = 1,
     max_chars: int = 20000,
-    soap_setting_id: int = 1,
+    soap_setting_id: int = 0,
 ) -> dict:
     """Extrai o TEXTO de um documento da Pasta do Processo judicial
     (despacho, decisão, sentença, petição...) direto na conversa, sem
@@ -730,7 +758,7 @@ def ler_documento_judicial(
     Anexo escaneado sem camada de texto vem vazio — a resposta avisa e o
     caminho é baixar_documento_judicial para OCR externo."""
     cnj = _cnj_digitos(numero_processo)
-    conteudo = _pdf_da_pasta(cnj, documento_id, soap_setting_id)
+    conteudo = _pdf_da_pasta(cnj, documento_id, _soap_setting(cnj, soap_setting_id))
 
     import pymupdf
 

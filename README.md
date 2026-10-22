@@ -216,7 +216,7 @@ O SPA da Coreplan atende outros entes públicos. Para adaptar: mude `BASE_URL` e
 ## 🚧 Roadmap
 
 - [ ] OCR local para documentos judiciais escaneados sem camada de texto
-- [ ] Suporte a outros `soap_setting_id` (tribunais de origem) descobertos automaticamente
+- [x] `soap_setting_id` deduzido do CNJ quando não informado (TJPI → 1, TRF1 → 11)
 - [ ] Cache opcional em disco da listagem de caixas para triagens mais rápidas
 
 ## 📝 Licença e créditos
