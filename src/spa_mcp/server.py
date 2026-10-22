@@ -885,6 +885,20 @@ def entradas_recentes(flow_id: int, dias: int = 7, limite: int = 200) -> dict:
         "retornados": len(filtrados),
         "processos": filtrados,
     }
+    if not filtrados and com_data:
+        # janela vazia: diz quando foi a última entrada, para o vazio não
+        # parecer falha de leitura (caixas que só retêm processos parados)
+        ultimo = min(com_data, key=lambda p: p["recebido_dias"])
+        resultado["entrada_mais_recente"] = {
+            "id": ultimo.get("id"),
+            "url": ultimo.get("url"),
+            "data_recebido": ultimo.get("data_recebido"),
+            "recebido_dias": ultimo["recebido_dias"],
+        }
+        resultado["observacao"] = (
+            f"Nenhuma entrada nos últimos {dias} dias; a mais recente foi há "
+            f"{ultimo['recebido_dias']} dias ({ultimo.get('data_recebido')})."
+        )
     aviso = _aviso_amostra_parcial(caixa.get("total"), len(caixa["processos"]))
     if aviso:
         resultado["aviso"] = aviso
@@ -903,12 +917,15 @@ def triagem(dias: int = 3, max_processos: int = 40, max_documentos: int = 5) -> 
 
     itens: list[dict[str, Any]] = []
     erros_caixa: list[dict[str, Any]] = []
+    ultimas: list[dict[str, Any]] = []
     for fid, nome in fluxos.items():
         try:
             rec = entradas_recentes(fid, dias=dias)
         except Exception as exc:
             erros_caixa.append({"flow_id": fid, "caixa": nome, "erro": str(exc)})
             continue
+        if "entrada_mais_recente" in rec:
+            ultimas.append({"flow_id": fid, "caixa": nome, **rec["entrada_mais_recente"]})
         for p in rec["processos"]:
             itens.append({"flow_id": fid, "caixa": nome, **p})
 
@@ -941,7 +958,7 @@ def triagem(dias: int = 3, max_processos: int = 40, max_documentos: int = 5) -> 
         list(pool.map(_anexar_pasta, itens))
 
     hoje = date.today()
-    return {
+    resultado: dict[str, Any] = {
         "hoje": hoje.isoformat(),
         "janela_dias": dias,
         "desde": (hoje - timedelta(days=dias)).isoformat(),
@@ -958,6 +975,16 @@ def triagem(dias: int = 3, max_processos: int = 40, max_documentos: int = 5) -> 
         ),
         "processos": itens,
     }
+    if not itens and ultimas:
+        ultimas.sort(key=lambda u: u["recebido_dias"])
+        resultado["entradas_mais_recentes"] = ultimas
+        resultado["observacao"] = (
+            f"Nenhuma entrada nas caixas nos últimos {dias} dias; a mais "
+            f"recente foi há {ultimas[0]['recebido_dias']} dias "
+            f"({ultimas[0]['caixa']}). Processos novos que saem logo da caixa "
+            "(ex.: redistribuídos) não aparecem aqui — veja notificacoes."
+        )
+    return resultado
 
 
 @mcp.tool
